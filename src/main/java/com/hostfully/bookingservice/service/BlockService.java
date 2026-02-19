@@ -1,16 +1,31 @@
 package com.hostfully.bookingservice.service;
 
 import com.hostfully.bookingservice.dto.BlockRequest;
+import com.hostfully.bookingservice.exception.OverlappingReservationException;
 import com.hostfully.bookingservice.model.Block;
+import com.hostfully.bookingservice.model.BookingStatus;
+import com.hostfully.bookingservice.repository.BlockRepository;
+import com.hostfully.bookingservice.repository.BookingRepository;
+import com.hostfully.bookingservice.service.exception.NotFoundException;
+import com.hostfully.bookingservice.util.DateChecker;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.LocalDate;
 
 @Service
 public class BlockService {
-    public BlockService() {
 
+    private final BlockRepository blockRepository;
+    private final BookingRepository bookingRepository;
+    private final DateChecker dateChecker;
+
+    public BlockService(BookingRepository bookingRepository, BlockRepository blockRepository, DateChecker dateChecker) {
+        this.bookingRepository = bookingRepository;
+        this.blockRepository = blockRepository;
+        this.dateChecker = dateChecker;
     }
 
     public Mono<Block> createBlock(BlockRequest request) {
@@ -21,32 +36,64 @@ public class BlockService {
                 .reason(request.getReason())
                 .build();
         return checkOverlap(block.getPropertyId(), block.getStartDate(), block.getEndDate(), null)
-                .then(Mono.just(block));
+                .then(Mono.fromCallable(() -> blockRepository.save(block))
+                        .subscribeOn(Schedulers.boundedElastic()));
     }
 
-    public Mono<Block> updateBlock(String id,
-                                   BlockRequest request) {
-        return Mono.empty();
+    public Mono<Block> updateBlock(Long id, BlockRequest request) {
+        dateChecker.validateDates(request.getStartDate(), request.getEndDate());
+
+        return Mono.fromCallable(() -> blockRepository.findById(id))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(o -> o.isPresent() ? Mono.just(o.get()) : Mono.empty())
+                .switchIfEmpty(Mono.error(new NotFoundException(String.format("Block %d not found", id))))
+                .flatMap(existing -> checkOverlap(request.getPropertyId(),
+                        request.getStartDate(), request.getEndDate(), id)
+                        .then(Mono.fromCallable(() -> {
+                            existing.setPropertyId(request.getPropertyId());
+                            existing.setStartDate(request.getStartDate());
+                            existing.setEndDate(request.getEndDate());
+                            existing.setReason(request.getReason());
+                            return blockRepository.save(existing);
+                        }).subscribeOn(Schedulers.boundedElastic())));
     }
 
-    public Mono<Void> deleteBlock(String id) {
-        return Mono.empty();
+    public Mono<Void> deleteBlock(Long id) {
+        return Mono.fromRunnable(() -> blockRepository.deleteById(id))
+                .subscribeOn(Schedulers.boundedElastic()).then();
     }
 
-    private Mono<Void> checkOverlap(String propertyId,
-                                    LocalDate start,
-                                    LocalDate end,
-                                    String excludeBlockId) {
-        return Mono.empty();
-    }
 
-    private boolean datesOverlap(LocalDate s1, LocalDate e1, LocalDate s2, LocalDate e2) {
-        return s1.isBefore(e2) && s2.isBefore(e1);
-    }
+    /**
+     * Checks whether for a given property and [start, end) there exists
+     *  - booking that intersects with [start, end)
+     *  - block that intersects with [start, end)
+     * @param propertyId
+     * @param start
+     * @param end
+     * @param excludeBlockId
+     * @return Mono.empty() if there is no overlap or Mono.error() if there is.
+     */
+    private Mono<Void> checkOverlap(Long propertyId, LocalDate start, LocalDate end, Long excludeBlockId) {
 
-    private void validateDates(LocalDate start, LocalDate end) {
-        if (!start.isBefore(end)) {
-            throw new IllegalArgumentException("Start date must be before end date");
-        }
+        Mono<Void> bookingCheck = Mono.fromCallable(() -> bookingRepository.findAllByPropertyId(propertyId))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMapMany(Flux::fromIterable)
+                .filter(b -> b.getStatus() == BookingStatus.ACTIVE)
+                .filter(b -> dateChecker.datesOverlap(start, end, b.getStartDate(), b.getEndDate()))
+                .next()
+                .flatMap(b -> Mono.<Void>error(new OverlappingReservationException(
+                        "Block overlaps with an existing active booking")));
+
+        Mono<Void> blockCheck = Mono.fromCallable(() -> blockRepository.findAllByPropertyId(propertyId))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMapMany(Flux::fromIterable)
+                .filter(b -> excludeBlockId == null || !b.getId().equals(excludeBlockId))
+                .filter(b -> dateChecker.datesOverlap(start, end, b.getStartDate(), b.getEndDate()))
+                .next()
+                .flatMap(b -> Mono.<Void>error(new OverlappingReservationException(
+                        "Block overlaps with an existing block")));
+
+        return Mono.when(bookingCheck, blockCheck);
     }
 }

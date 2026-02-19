@@ -25,14 +25,14 @@ public class BlockController {
     }
 
     @PutMapping("/{id}")
-    public Mono<Block> updateBlock(@PathVariable String id,
+    public Mono<Block> updateBlock(@PathVariable Long id,
                                    @Valid @RequestBody BlockRequest request) {
         return blockService.updateBlock(id, request);
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<Void> deleteBlock(@PathVariable String id) {
+    public Mono<Void> deleteBlock(@PathVariable Long id) {
         return blockService.deleteBlock(id);
     }
 }

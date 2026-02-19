@@ -15,7 +15,7 @@ import java.time.LocalDate;
 public class BlockRequest {
 
     @NotBlank
-    private String propertyId;
+    private Long propertyId;
 
     @NotNull
     @FutureOrPresent

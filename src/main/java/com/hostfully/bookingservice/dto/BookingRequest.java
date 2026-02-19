@@ -17,7 +17,7 @@ import java.time.LocalDate;
 public class BookingRequest {
 
     @NotBlank
-    private String propertyId;
+    private Long propertyId;
 
     @NotBlank
     private String guestName;

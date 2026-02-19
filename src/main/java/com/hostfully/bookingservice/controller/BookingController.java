@@ -26,29 +26,29 @@ public class BookingController {
     }
 
     @GetMapping("/{id}")
-    public Mono<Booking> getBooking(@PathVariable String id) {
+    public Mono<Booking> getBooking(@PathVariable Long id) {
         return bookingService.getBooking(id);
     }
 
     @PutMapping("/{id}")
-    public Mono<Booking> updateBooking(@PathVariable String id,
+    public Mono<Booking> updateBooking(@PathVariable Long id,
                                        @Valid @RequestBody BookingUpdateRequest request) {
         return bookingService.updateBooking(id, request);
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public Mono<Void> deleteBooking(@PathVariable String id) {
+    public Mono<Void> deleteBooking(@PathVariable Long id) {
         return bookingService.deleteBooking(id);
     }
 
     @PostMapping("/{id}/cancel")
-    public Mono<Booking> cancelBooking(@PathVariable String id) {
+    public Mono<Booking> cancelBooking(@PathVariable Long id) {
         return bookingService.cancelBooking(id);
     }
 
     @PostMapping("/{id}/rebook")
-    public Mono<Booking> rebookBooking(@PathVariable String id) {
+    public Mono<Booking> rebookBooking(@PathVariable Long id) {
         return bookingService.rebookBooking(id);
     }
 }
