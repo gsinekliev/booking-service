@@ -5,33 +5,38 @@ import com.hostfully.bookingservice.dto.BookingUpdateRequest;
 import com.hostfully.bookingservice.model.Booking;
 import com.hostfully.bookingservice.model.BookingStatus;
 import com.hostfully.bookingservice.model.Guest;
+import com.hostfully.bookingservice.repository.BookingRepository;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
-import java.util.UUID;
 
 @Service
 public class BookingService {
 
-    public BookingService() {
+    private final BookingRepository bookingRepository;
+
+    public BookingService(BookingRepository bookingRepository) {
+        this.bookingRepository = bookingRepository;
     }
 
     public Mono<Booking> createBooking(BookingRequest request) {
         validateDates(request.getStartDate(), request.getEndDate());
-        Guest guest = new Guest();
-        guest.setId(UUID.randomUUID().toString());
-        guest.setFirstName(request.getGuestName());
-        guest.setEmail(request.getGuestEmail());
 
-        Booking booking = new Booking(
-                UUID.randomUUID().toString(),
-                request.getPropertyId(),
-                guest,
-                request.getStartDate(),
-                request.getEndDate(),
-                BookingStatus.ACTIVE
-        );
+        Guest guest = Guest.builder()
+                .firstName(request.getGuestName())
+                .email(request.getGuestEmail())
+                .build();
+
+        Booking booking = Booking.builder()
+                .propertyId(request.getPropertyId())
+                .guest(guest)
+                .startDate(request.getStartDate())
+                .endDate(request.getEndDate())
+                .status(BookingStatus.ACTIVE)
+                .build();
+
+        bookingRepository.save(booking);
         return Mono.just(booking);
     }
 

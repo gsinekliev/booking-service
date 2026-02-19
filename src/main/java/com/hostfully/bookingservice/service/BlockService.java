@@ -6,7 +6,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
-import java.util.UUID;
 
 @Service
 public class BlockService {
@@ -15,18 +14,18 @@ public class BlockService {
     }
 
     public Mono<Block> createBlock(BlockRequest request) {
-        Block block = new Block(
-                UUID.randomUUID().toString(),
-                request.getPropertyId(),
-                request.getStartDate(),
-                request.getEndDate(),
-                request.getReason()
-        );
+        Block block = Block.builder()
+                .propertyId(request.getPropertyId())
+                .startDate(request.getStartDate())
+                .endDate(request.getEndDate())
+                .reason(request.getReason())
+                .build();
         return checkOverlap(block.getPropertyId(), block.getStartDate(), block.getEndDate(), null)
                 .then(Mono.just(block));
     }
 
-    public Mono<Block> updateBlock(String id, BlockRequest request) {
+    public Mono<Block> updateBlock(String id,
+                                   BlockRequest request) {
         return Mono.empty();
     }
 
@@ -34,8 +33,10 @@ public class BlockService {
         return Mono.empty();
     }
 
-    private Mono<Void> checkOverlap(String propertyId, LocalDate start, LocalDate end,
-                                     String excludeBlockId) {
+    private Mono<Void> checkOverlap(String propertyId,
+                                    LocalDate start,
+                                    LocalDate end,
+                                    String excludeBlockId) {
         return Mono.empty();
     }
 
