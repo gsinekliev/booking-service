@@ -14,7 +14,7 @@ import java.time.LocalDate;
 @NoArgsConstructor(force = true)
 public class BlockRequest {
 
-    @NotBlank
+    @NotNull
     private Long propertyId;
 
     @NotNull
