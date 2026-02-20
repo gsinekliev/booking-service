@@ -8,33 +8,33 @@ import com.hostfully.bookingservice.model.BookingStatus;
 import com.hostfully.bookingservice.model.Guest;
 import com.hostfully.bookingservice.repository.BlockRepository;
 import com.hostfully.bookingservice.repository.BookingRepository;
-import com.hostfully.bookingservice.service.exception.NotFoundException;
+import com.hostfully.bookingservice.repository.GuestRepository;
+import com.hostfully.bookingservice.exception.NotFoundException;
 import com.hostfully.bookingservice.util.DateChecker;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
-
 import java.time.LocalDate;
 
 @Service
 public class BookingService {
 
     private final BookingRepository bookingRepository;
-    private final DateChecker dateChecker;
     private final BlockRepository blockRepository;
+    private final GuestRepository guestRepository;
 
     public BookingService(BookingRepository bookingRepository,
                           BlockRepository blockRepository,
+                          GuestRepository guestRepository,
                           DateChecker dateChecker) {
         this.bookingRepository = bookingRepository;
         this.blockRepository = blockRepository;
-        this.dateChecker = dateChecker;
+        this.guestRepository = guestRepository;
     }
 
     public Mono<Booking> createBooking(BookingRequest request) {
 
-        dateChecker.validateDates(request.getStartDate(), request.getEndDate());
+        DateChecker.validateDates(request.getStartDate(), request.getEndDate());
 
         Guest guest = Guest.builder()
                 .firstName(request.getGuestName())
@@ -49,8 +49,12 @@ public class BookingService {
                 .status(BookingStatus.ACTIVE)
                 .build();
 
-        return Mono.fromCallable(() -> bookingRepository.save(booking))
-                .subscribeOn(Schedulers.boundedElastic());
+        return checkOverlap(request.getPropertyId(), request.getStartDate(), request.getEndDate(), booking.getId()).then(
+                Mono.fromCallable(() -> {
+                    guestRepository.save(guest);
+                    return bookingRepository.save(booking);
+                }).subscribeOn(Schedulers.boundedElastic())
+        );
     }
 
     public Mono<Booking> getBooking(Long id) {
@@ -60,7 +64,7 @@ public class BookingService {
     }
 
     public Mono<Booking> updateBooking(Long id, BookingUpdateRequest request) {
-        dateChecker.validateDates(request.getStartDate(), request.getEndDate());
+        DateChecker.validateDates(request.getStartDate(), request.getEndDate());
         Mono<Booking> result = Mono.fromCallable(() -> bookingRepository.findById(id)).subscribeOn(Schedulers.boundedElastic()).flatMap(Mono::justOrEmpty);
 
         return result
@@ -85,11 +89,23 @@ public class BookingService {
     }
 
     public Mono<Booking> cancelBooking(Long id) {
-        return Mono.empty();
+        Mono<Booking> result = Mono.fromCallable(() -> bookingRepository.findById(id)).subscribeOn(Schedulers.boundedElastic()).flatMap(Mono::justOrEmpty);
+        return result
+                .switchIfEmpty(Mono.error(new NotFoundException("Booking not found")))
+                .flatMap(booking -> {
+                    booking.setStatus(BookingStatus.CANCELED);
+                    return Mono.fromCallable(() -> bookingRepository.save(booking));
+                });
     }
 
     public Mono<Booking> rebookBooking(Long id) {
-        return Mono.empty();
+        return Mono.fromCallable(() -> bookingRepository.findById(id)
+                .stream()
+                .filter(booking -> booking.getStatus().equals(BookingStatus.CANCELED))
+                .map(booking -> {
+                    booking.setStatus(BookingStatus.ACTIVE);
+                    return bookingRepository.save(booking);
+                }).findFirst()).flatMap(Mono::justOrEmpty).subscribeOn(Schedulers.boundedElastic());
     }
 
     public Mono<Void> deleteBooking(Long id) {
@@ -98,26 +114,15 @@ public class BookingService {
                 .then();
     }
 
-    /**
-     * Checks that no ACTIVE booking or block overlaps with the given date range on the property.
-     * Uses exclusive end-date semantics: [start, end) — so a booking ending on March 10
-     * does not conflict with one starting on March 10.
-     */
     private Mono<Void> checkOverlap(Long propertyId, LocalDate start, LocalDate end,
                                     Long excludeBookingId) {
-        Mono<Void> bookingCheck = Mono.fromCallable(() -> bookingRepository.findAllByPropertyId(propertyId))
-                .flatMapMany(Flux::fromIterable)
-                .filter(b -> b.getStatus() == BookingStatus.ACTIVE)
-                .filter(b -> excludeBookingId == null || !b.getId().equals(excludeBookingId))
-                .filter(b -> dateChecker.datesOverlap(start, end, b.getStartDate(), b.getEndDate()))
-                .next()
+        Mono<Void> bookingCheck = Mono.fromCallable(() -> bookingRepository.checkOverlap(propertyId, start, end, excludeBookingId)).subscribeOn(Schedulers.boundedElastic())
+                .filter(hasOverlap -> hasOverlap)
                 .flatMap(b -> Mono.<Void>error(new OverlappingReservationException(
                         "Booking overlaps with an existing booking")));
 
-        Mono<Void> blockCheck = Mono.fromCallable(() -> blockRepository.findAllByPropertyId(propertyId))
-                .flatMapMany(Flux::fromIterable)
-                .filter(b -> dateChecker.datesOverlap(start, end, b.getStartDate(), b.getEndDate()))
-                .next()
+        Mono<Void> blockCheck = Mono.fromCallable(() -> blockRepository.checkOverlap(propertyId, start, end, null)).subscribeOn(Schedulers.boundedElastic())
+                .filter(hasOverlap -> hasOverlap)
                 .flatMap(b -> Mono.<Void>error(new OverlappingReservationException(
                         "Booking overlaps with a block")));
 

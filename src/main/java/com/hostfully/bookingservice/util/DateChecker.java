@@ -10,7 +10,7 @@ public class DateChecker {
 
     }
 
-    public boolean datesOverlap(LocalDate s1, LocalDate e1, LocalDate s2, LocalDate e2) {
+    public static boolean datesOverlap(LocalDate s1, LocalDate e1, LocalDate s2, LocalDate e2) {
         if (s2.isBefore(s1)) {
             // make sure s1 is before s2
             LocalDate tmpS = s1;
@@ -25,7 +25,7 @@ public class DateChecker {
         return ((s2.isAfter(s1) || s2.equals(s1)) && s2.isBefore(e1));
     }
 
-    public void validateDates(LocalDate start, LocalDate end) {
+    public static void validateDates(LocalDate start, LocalDate end) {
         if (!start.isBefore(end)) {
             throw new IllegalArgumentException("Start date must be before end date");
         }

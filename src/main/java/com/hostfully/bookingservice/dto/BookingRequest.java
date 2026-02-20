@@ -16,7 +16,6 @@ import java.time.LocalDate;
 @Setter
 public class BookingRequest {
 
-    @NotBlank
     private Long propertyId;
 
     @NotBlank

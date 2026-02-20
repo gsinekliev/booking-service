@@ -1,4 +1,4 @@
-package com.hostfully.bookingservice.service.exception;
+package com.hostfully.bookingservice.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ResponseStatus;
