@@ -55,8 +55,10 @@ public class BlockService {
     }
 
     public Mono<Void> deleteBlock(Long id) {
-        return Mono.fromRunnable(() -> blockRepository.deleteById(id))
-                .subscribeOn(Schedulers.boundedElastic()).then();
+        return Mono.fromRunnable(() -> {
+            blockRepository.findById(id).orElseThrow(() -> new NotFoundException(String.format("Block %d not found", id)));
+            blockRepository.deleteById(id);
+        });
     }
 
 

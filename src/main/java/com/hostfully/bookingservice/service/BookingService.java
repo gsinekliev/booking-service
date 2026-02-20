@@ -59,13 +59,17 @@ public class BookingService {
 
     public Mono<Booking> getBooking(Long id) {
         return Mono.fromCallable(() -> bookingRepository.findById(id))
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(Mono::justOrEmpty);
+                .flatMap(Mono::justOrEmpty)
+                .switchIfEmpty(Mono.error(new NotFoundException("Booking not found with id: " + id)))
+                .subscribeOn(Schedulers.boundedElastic());
+
     }
 
     public Mono<Booking> updateBooking(Long id, BookingUpdateRequest request) {
         DateChecker.validateDates(request.getStartDate(), request.getEndDate());
-        Mono<Booking> result = Mono.fromCallable(() -> bookingRepository.findById(id)).subscribeOn(Schedulers.boundedElastic()).flatMap(Mono::justOrEmpty);
+        Mono<Booking> result = Mono.fromCallable(() -> bookingRepository.findById(id))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(Mono::justOrEmpty);
 
         return result
                 .switchIfEmpty(Mono.error(new NotFoundException("Booking not found")))
@@ -89,7 +93,9 @@ public class BookingService {
     }
 
     public Mono<Booking> cancelBooking(Long id) {
-        Mono<Booking> result = Mono.fromCallable(() -> bookingRepository.findById(id)).subscribeOn(Schedulers.boundedElastic()).flatMap(Mono::justOrEmpty);
+        Mono<Booking> result = Mono.fromCallable(() -> bookingRepository.findById(id))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(Mono::justOrEmpty);
         return result
                 .switchIfEmpty(Mono.error(new NotFoundException("Booking not found")))
                 .flatMap(booking -> {
@@ -102,16 +108,21 @@ public class BookingService {
         return Mono.fromCallable(() -> bookingRepository.findById(id)
                 .stream()
                 .filter(booking -> booking.getStatus().equals(BookingStatus.CANCELED))
+                .filter(booking -> !bookingRepository.checkOverlap(booking.getPropertyId(), booking.getStartDate(), booking.getEndDate(), booking.getId()))
                 .map(booking -> {
                     booking.setStatus(BookingStatus.ACTIVE);
                     return bookingRepository.save(booking);
-                }).findFirst()).flatMap(Mono::justOrEmpty).subscribeOn(Schedulers.boundedElastic());
+                })
+                .findFirst())
+                .flatMap(Mono::justOrEmpty)
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     public Mono<Void> deleteBooking(Long id) {
-        return Mono.fromRunnable(() -> bookingRepository.deleteById(id))
-                .subscribeOn(Schedulers.boundedElastic())
-                .then();
+        return Mono.fromRunnable(() -> {
+            bookingRepository.findById(id).orElseThrow(() -> new NotFoundException(String.format("Booking %d not found", id)));
+            bookingRepository.deleteById(id);
+        });
     }
 
     private Mono<Void> checkOverlap(Long propertyId, LocalDate start, LocalDate end,
